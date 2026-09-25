@@ -8,7 +8,7 @@ A comprehensive Speech-to-Text benchmark evaluating OpenAI Whisper model variant
 
 ✅ **Model Size Matters:** Whisper Large-v3 significantly outperforms Tiny/Base on accented speech (10% WER vs. 30-34%), justifying computational cost.
 
-⚠️ **Prompt Engineering Challenge:** Token prefix constraints (`prompt_ids`) degrade output quality and accuracy. Current approach not suitable for accent guidance; alternative methods needed - future exploration.
+⚠️ **Prompt Engineering Challenge:** Token prefix constraints degrade output quality and accuracy. Current approach not suitable for accent guidance; alternative methods needed - future exploration.
 
 ## Project Overview
 
@@ -74,7 +74,7 @@ print(torch.cuda.get_device_name(0))
 
 ### Running the Notebook
 ```bash
-jupyter notebook WIP\ STT_Comparison.ipynb
+jupyter notebook WIP\ STT_Comparison-wPrompt wBERT.ipynb
 ```
 Run cells sequentially.
 
@@ -229,7 +229,7 @@ Extend the project:
 ## Project Status
 
 **Version:** 1.0 (Complete)
-**Last Updated:** September 25, 2026
+**Last Updated:** September, 2026
 **Status:** Ready for Publication - Comprehensive Evaluation Complete
 **Python:** 3.10+
 **PyTorch:** 2.14.0+
