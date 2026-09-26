@@ -1,247 +1,119 @@
 # AI Systems Evaluation: Whisper Speech-to-Text (STT) Benchmark
 
-A comprehensive Speech-to-Text benchmark evaluating OpenAI Whisper model variants (Tiny, Base, Large-v3) across three dimensions: **latency/efficiency**, **accent robustness**, and **semantic preservation**. This project investigates how well Whisper handles non-native English accents and evaluates prompt engineering approaches for accent-specific guidance.
+A Speech-to-Text benchmark of OpenAI Whisper (Tiny, Base, Large-v3) across three dimensions: **latency and cost**, **accent robustness**, and **semantic preservation**. It also tests whether an accent-specific decoder prompt (`prompt_ids`) improves transcription of Singaporean, Indian and British English.
 
 ## Key Findings
 
-✅ **Base Whisper is Semantically Robust:** BERT-F1 scores of 0.92-0.96 across all models, indicating strong semantic preservation despite word-level errors.
+✅ **Model size matters:** on accented speech Whisper Large-v3 reaches ~10% WER against ~30-35% for Tiny and Base, at roughly 6-7x the latency and 11-14x the cost per audio hour of the smaller models.
 
-✅ **Model Size Matters:** Whisper Large-v3 significantly outperforms Tiny/Base on accented speech (10% WER vs. 30-34%), justifying computational cost.
+✅ **Transcripts stay semantically close to the reference:** base BERT-F1 is 0.92-0.96 for all models despite word-level errors.
 
-⚠️ **Prompt Engineering Challenge:** Token prefix constraints degrade output quality and accuracy. Current approach not suitable for accent guidance; alternative methods needed - future exploration.
+⚠️ **The accent prompt hurts small models:** with the prompt, Tiny and Base often produce repeated or hallucinated text. Median WER rises from 22 to 98 (Tiny) and from 15 to 83 (Base), and the mean reaches 437-1184% because insertions are unbounded. Large-v3 is barely affected (median 5.6 to 7.7). The cause has not been isolated: see [Limitations](#known-limitations--future-work).
 
-## Project Overview
+## Evaluation Structure
 
-This project comprehensively evaluates Whisper's performance on accented English speech and documents findings on prompt engineering effectiveness. The evaluation combines traditional ASR metrics (WER, SER, DER, IER) with semantic similarity metrics (BERT-F1) to provide multi-dimensional analysis.
+The notebook has four parts. Its cells are thin drivers that call the code in `src/`.
 
-### Evaluation Goals
+| Part | What it does | Dataset | Main metrics |
+|---|---|---|---|
+| 1. Latency & efficiency | Times each clip on each model (untimed warm-up, median of 3 runs) | LibriSpeech validation, clean + other, 100 clips each | WER, CER, latency p50/p95/p99, RTF, cost per 1,000 audio hours |
+| 2. Accent robustness | Transcribes each sample with and without an accent prompt | `DTU54DL/common-accent`, topped up from Westbrook (British), Svarah (Indian) or MNSC (Singaporean); 100 per accent | WER, SER, DER, IER, SER reduction |
+| 3. Semantic evaluation | BERT-Score of the Part 2 hypotheses against references (no re-inference) | Part 2 outputs | Base / prompted BERT-F1 |
+| 4. Comparison | Combines all parts into plots and a summary table | Results CSVs | Dashboard, heatmap, radar, waterfall, table |
 
-1. Benchmark Whisper variants on speed, accuracy, and cost trade-offs
-2. Assess accent robustness across Singaporean, Indian, British English
-3. Investigate prompt engineering limitations and document findings
-4. Measure semantic preservation using BERT-Score
-5. Provide comprehensive analysis of model capabilities and limitations
+Downloads are deterministic: streams are read in file order with no shuffling, so the same samples are selected each run unless the source datasets change.
 
----
+## Repository Layout
 
-## Project Structure
+```
+notebooks/   STT_Comparison-wPrompt wBERT.ipynb, results/ (CSVs and PNGs)
+src/
+  config.py      paths, model ids, sample counts, prompts, GPU hourly cost
+  data.py        dataset download, audio decoding (soundfile + librosa)
+  inference.py   Whisper pipelines, latency benchmark, accent evaluation
+  metrics.py     WER/CER/SER/DER/IER, BERT-F1, normalisation
+  aggregate.py   summary tables from raw results
+  plots.py       plot configuration and all figures
+  io_utils.py    saving and loading results
+dataset/     downloaded LibriSpeech wavs (git-ignored)
+```
 
-The evaluation is organized in 4 Parts:
+`src/` contains no printing; the notebook does all display and plotting.
 
-### Part 1: Latency & Efficiency Benchmarking - Deterministic Evaluation
-- Dataset: LibriSpeech (clean + challenging, 200 samples)
-- Metrics: WER, CER, Latency (ms), RTF, Cost/1000 audio hours
-- Goal: Accuracy vs. Speed trade-off analysis
+## Setup
 
-### Part 2: Accent Robustness & Prompt Engineering Analysis
-- Dataset: DTU54DL/common-accent + fallback datasets (100 samples per accent)
-- Metrics: WER, SER, DER, IER, prompt impact analysis
-- **Finding:** Token prefix prompts degrade accuracy
-- Goal: Quantify prompt engineering limitations and document findings
+**Requirements:** Python 3.10+. An NVIDIA GPU is recommended; CPU works but the accent evaluation is slow.
 
-### Part 3: Semantic Evaluation
-- Method: BERT-Score (semantic similarity)
-- Metrics: Base BERT-F1, Prompted BERT-F1, BERT-F1 Improvement
-- Goal: Prove semantic meaning preservation despite word-level errors
-
-### Part 4: Comprehensive Comparison
-- Visualizations: Dashboard, heatmap, radar charts, waterfall, table
-- Goal: Unified view across all methods and metrics
-
----
-
-## Installation & Setup
-
-### Requirements
-- Python 3.8+
-- CUDA 11.0+ (GPU recommended, CPU mode supported)
-
-### Dependencies
 ```bash
-pip install jiwer transformers torch librosa pandas matplotlib seaborn soundfile datasets accelerate bert-score
+pip install -r requirements.txt
 ```
 
-### GPU Setup
-```python
-import torch
-print(torch.cuda.is_available())
-print(torch.cuda.get_device_name(0))
-```
-
----
+- **GPU:** on Windows, `pip install torch` installs a CPU-only build. Install the CUDA build from [pytorch.org](https://pytorch.org/get-started/locally/) and check with `torch.cuda.is_available()`. Whisper Large-v3 needs about 10GB of VRAM in fp16, so it will not fit a 6GB card.
+- **Hugging Face token:** create `secrets.env` in the project root containing `HF_TOKEN=<your token>`. It is loaded automatically and git-ignored.
+- **Audio decoding** uses `soundfile` and `librosa`, so FFmpeg is not required.
 
 ## Usage
 
-### Running the Notebook
-```bash
-jupyter notebook WIP\ STT_Comparison-wPrompt wBERT.ipynb
-```
-Run cells sequentially.
+Open `notebooks/STT_Comparison-wPrompt wBERT.ipynb` and run the cells in order. Sample counts, models, repeats and prompts are set in `src/config.py`. Outputs are written to `notebooks/results/`.
 
 ## Evaluation Metrics
 
-### Accuracy Metrics
-- WER: Word Error Rate (%) - Lower is better
-- SER: Substitution Error Rate (%) - Lower is better
-- DER: Deletion Error Rate (%) - Lower is better
-- IER: Insertion Error Rate (%) - Lower is better
-- BERT-F1: Semantic similarity (0-100%) - Higher is better
+**Accuracy** (text is lower-cased and stripped of punctuation before scoring)
+- **WER:** (substitutions + deletions + insertions) / reference words. Not capped at 100%, because insertions are unbounded.
+- **SER / DER / IER:** the substitution, deletion and insertion parts of WER.
+- **CER:** the same at character level.
+- **BERT-F1:** semantic similarity to the reference on a 0-1 scale (higher is better).
 
-### Efficiency Metrics
-- Latency: Time per clip (ms) - Lower is better
-- RTF: Real-Time Factor - Lower is better
-- Cost/1K hrs: Compute cost per 1,000 audio hours ($) - Lower is better
+**Efficiency** (measured sequentially, one clip at a time)
+- **Latency:** time per clip, reported as p50/p95/p99.
+- **RTF:** processing time / audio duration.
+- **Cost per 1,000 audio hours:** compute time × an hourly GPU rate. Rates are AWS on-demand reference prices set per model in `config.py` (g4dn.xlarge for Tiny and Base, g5.xlarge for Large-v3). Check them against current pricing before relying on them.
 
----
+## Results
+
+Part 1: LibriSpeech (200 clips per model)
+
+| Model | WER (%) | p50 latency (ms) | RTF | Cost / 1,000 audio hrs ($) |
+|---|---|---|---|---|
+| Whisper Tiny | 10.2 | 197 | 0.041 | 20.7 |
+| Whisper Base | 7.8 | 245 | 0.052 | 26.4 |
+| Whisper Large-v3 | 3.8 | 1461 | 0.303 | 286.0 |
+
+Parts 2 and 3: accented speech (300 samples per model)
+
+| Model | Base WER | Prompted WER | Median WER (base → prompted) | Base BERT-F1 | Prompted BERT-F1 |
+|---|---|---|---|---|---|
+| Whisper Tiny | 29.6 | 1184.1 | 22.2 → 98.0 | 0.921 | 0.836 |
+| Whisper Base | 34.8 | 437.2 | 15.4 → 83.3 | 0.934 | 0.862 |
+| Whisper Large-v3 | 10.0 | 12.0 | 5.6 → 7.7 | 0.956 | 0.954 |
+
+The mean prompted WER of Tiny and Base is dominated by a minority of looping outputs (WER in the thousands on short sentences), so read it together with the median. Latency figures depend on the hardware the benchmark ran on.
 
 ## Output Files
 
-### CSV Exports
-- stt_benchmark_results.csv - Part 1 results
-- whisper_part2_accent_results.csv - Part 2 results
-- whisper_bert_score_comparison.csv - Part 3 BERT-Score results
-- whisper_final_summary_report.csv - Final comprehensive report
+`notebooks/results/`
 
-### Visualizations (PNG)
-- whisper_comprehensive_dashboard.png - 9-panel overview
-- whisper_metrics_heatmap.png - Normalized metrics matrix
-- whisper_radar_profiles.png - 6-D capability profiles
-- whisper_impact_waterfall.png - Method impact timeline
-- whisper_summary_table.png - Visual summary table
-- whisper_wer_comparison.png - WER base vs. prompted
-- whisper_bert_f1_comparison.png - BERT-F1 comparison
-- whisper_wer_vs_bertf1_scatter.png - Correlation analysis
-
----
-
-## Key Features
-
-✅ Multi-Model Comparison: Tiny, Base, Large-v3
-✅ Prompt Engineering: Accent-specific decoder guidance
-✅ Multiple Metrics: WER, SER, DER, IER, BERT-F1, Latency, Cost
-✅ Accent Coverage: Singaporean, Indian, British English
-✅ Semantic Evaluation: BERT-Score for meaning preservation
-✅ Configurable: Adjust samples, models, evaluation methods
-✅ Production-Ready: CSV exports for further analysis
-
----
-
-## Methodology
-
-### Approach Tested: Prompt Engineering via Token Prefix
-Attempted using `prompt_ids` parameter to bias language decoder with accent context:
-- **Implementation:** Tokenize accent-specific text and pass as prompt
-- **Result:** Output constrained to prefix tokens, degrading transcription quality
-- **Limitations:** Current transformers 5.17.0 implementation unsuitable for this use case
-- **Lesson Learned:** Token prefix constraints fundamentally different from semantic guidance
-
-### BERT-Score Semantic Evaluation
-Measures semantic similarity using RoBERTa contextual embeddings:
-- Proves meaning is preserved despite word-level errors
-- Complements WER by evaluating comprehension-level accuracy
-- BERT-F1 0.92+ indicates transcriptions remain meaningful even with 30%+ WER
-
-### Error Analysis Metrics
-- **WER:** Total word errors (substitutions + deletions + insertions)
-- **SER:** Substitution Error Rate (words replaced with incorrect words)
-- **DER:** Deletion Error Rate (words missing from transcription)
-- **IER:** Insertion Error Rate (extra words added to transcription)
-- **BERT-F1:** Semantic similarity (0-1 scale, higher is better)
-
----
-
-## Actual Results & Analysis
-
-### Baseline Performance (Base Whisper Inference)
-- **WER:** Whisper Tiny 30%, Base 34.24%, Large-v3 10%
-- **BERT-F1:** Tiny 0.9204, Base 0.9347, Large-v3 0.9558
-- Larger models significantly more robust to accented speech
-
-### Prompt Engineering Results
-- **Approach:** Token prefix constraints via `prompt_ids` parameter
-- **Outcome:** Degrades accuracy - WER increases to 417-1163%, output truncated to 1-3 words
-- **BERT-F1 Impact:** -0.07 to -0.08 degradation on smaller models, minimal on Large-v3
-- **Conclusion:** Not viable for accent guidance without alternative implementation
-
-### Key Insights
-1. **Semantic Robustness:** Base inference maintains 92-95% semantic fidelity
-2. **Model Scaling Effect:** Large-v3 performance degrades minimally with prompts (0.9558→0.9537)
-3. **Accent Handling:** Larger models naturally handle accents well without guidance
-
----
+- CSVs: `stt_benchmark_results.csv` (Part 1), `stt_cost_efficiency_summary.csv`, `whisper_part2_accent_results.csv` (Part 2, the filename predates the rename to "accent"), `whisper_bert_score_comparison.csv` (Part 3), `whisper_final_summary_report.csv`
+- Figures: `whisper_comprehensive_dashboard.png`, `whisper_metrics_heatmap.png`, `whisper_radar_profiles.png`, `whisper_impact_waterfall.png`, `whisper_summary_table.png`, `whisper_wer_comparison.png`, `whisper_ser_reduction_heatmap.png`
 
 ## Known Limitations & Future Work
 
 ### Limitations
-1. **Dataset Size:** 100 samples per accent (sufficient for proof-of-concept)
-2. **GPU Memory:** Large-v3 requires ~10GB VRAM for inference
-3. **Prompt Engineering:** Current `prompt_ids` implementation unsuitable; requires alternative approach
-4. **Accent Coverage:** Limited to 3 English accents; needs expansion
-5. **Inference-Only:** No model fine-tuning; testing existing capabilities
+1. **Prompt result is not fully explained.** Prompting degrades Tiny and Base, but it has not been tested whether the `prompt_ids` usage is handled as intended by transformers 5.17, or whether a different prompt wording, a repetition limit, or a longer clip would avoid the loops. Treat it as "this prompt, on these models, does not help", not as a general statement about prompting.
+2. **Mixed accent sources.** An accent's 100 samples may come from more than one dataset, with different recording conditions and transcript styles. The Westbrook "British" set also includes Scottish and Irish speakers.
+3. **Sample size.** 100 samples per accent, on short sentences (about 11 words), gives noisy per-accent averages.
+4. **Sequential benchmark.** Latency and cost describe one request at a time. A batched or concurrent server would show higher throughput and lower cost, which this benchmark does not measure.
+5. **Plot scaling.** BERT-F1 is 0-1 but is shown alongside percentages in the dashboard and radar charts, and the waterfall uses an arbitrary scaling for its semantic bar.
+6. **Inference only.** No fine-tuning; results depend on the software and hardware used.
 
 ### Future Work
-- Explore language model rescoring for accent guidance
-- Fine-tuning on accent-specific datasets
-- Evaluate alternative prompt injection methods
-- Test on additional accents (Australian, South African, etc.)
-- Extended evaluation with 500+ samples per accent
-- Noisy audio robustness testing
-
----
-
-## Contributing
-
-Extend the project:
-1. Add new accents (modify ACCENT_LABEL_MAP in Cell 8)
-2. Test additional datasets (CommonVoice, Mozilla STT)
-3. Evaluate other STT models (Google Cloud, Azure, Deepgram)
-4. Add language-specific prompting strategies
-5. Implement real-time inference evaluation
-
----
+- Isolate the prompt failure: verify `prompt_ids` handling, try repetition limits and other prompt wordings
+- Report median WER and the share of looped outputs alongside the mean
+- Add per-request cost, a batched throughput benchmark and a human preference study
+- More accents, more samples, and noisy or long-form audio
 
 ## References
 
-### Whisper Model
-- OpenAI Whisper Paper: https://arxiv.org/abs/2212.04356
-- Hugging Face Transformers: https://huggingface.co/docs/transformers
-
-### Evaluation Metrics
-- jiwer: https://github.com/jitsi/jiwer
-- BERT-Score: https://arxiv.org/abs/1904.09675
-
-### Datasets
-- LibriSpeech: http://www.openslr.org/12
-- DTU54DL/common-accent: https://huggingface.co/datasets/DTU54DL/common-accent
-- ai4bharat/Svarah: https://huggingface.co/datasets/ai4bharat/Svarah
-- MERaLiON: https://huggingface.co/datasets/MERaLiON
-
----
-
-## Acknowledgments
-
-- OpenAI for Whisper
-- Hugging Face for Transformers library
-- Dataset providers: LibriSpeech, DTU54DL, ai4bharat, MERaLiON
-
----
-
-## Project Status
-
-**Version:** 1.0 (Complete)
-**Last Updated:** September, 2026
-**Status:** Ready for Publication - Comprehensive Evaluation Complete
-**Python:** 3.10+
-**PyTorch:** 2.14.0+
-**Transformers:** 5.17.0+
-**GPU:** CUDA 11.0+ (optional; CPU mode supported)
-
-### Outputs Generated
-- ✅ `whisper_part2_accent_results.csv` - 900 samples across 3 models × 3 accents
-- ✅ `whisper_bert_score_comparison.csv` - BERT-F1 semantic evaluation
-- ✅ Comprehensive visualizations and analysis charts
-- ✅ GitHub-ready documentation and git configuration
-
----
-
-**Note:** This benchmark documents an experimental evaluation. Token prefix prompting approach is documented as ineffective for this use case, providing valuable learning for future work.
+- Whisper: https://arxiv.org/abs/2212.04356 · Transformers: https://huggingface.co/docs/transformers
+- jiwer: https://github.com/jitsi/jiwer · BERT-Score: https://arxiv.org/abs/1904.09675
+- Datasets: [LibriSpeech](http://www.openslr.org/12) · [DTU54DL/common-accent](https://huggingface.co/datasets/DTU54DL/common-accent) · [westbrook/English_Accent_DataSet](https://huggingface.co/datasets/westbrook/English_Accent_DataSet) · [ai4bharat/Svarah](https://huggingface.co/datasets/ai4bharat/Svarah) · [MERaLiON MNSC](https://huggingface.co/datasets/MERaLiON/Multitask-National-Speech-Corpus-v1)
