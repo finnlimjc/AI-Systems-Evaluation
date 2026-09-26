@@ -12,21 +12,22 @@ A Speech-to-Text benchmark of OpenAI Whisper (Tiny, Base, Large-v3) across three
 
 ## Evaluation Structure
 
-The notebook has four parts. Its cells are thin drivers that call the code in `src/`.
+The benchmark notebook has four parts. Its cells are thin drivers that call the code in `src/`.
 
 | Part | What it does | Dataset | Main metrics |
 |---|---|---|---|
 | 1. Latency & efficiency | Times each clip on each model (untimed warm-up, median of 3 runs) | LibriSpeech validation, clean + other, 100 clips each | WER, CER, latency p50/p95/p99, RTF, cost per 1,000 audio hours |
 | 2. Accent robustness | Transcribes each sample with and without an accent prompt | `DTU54DL/common-accent`, topped up from Westbrook (British), Svarah (Indian) or MNSC (Singaporean); 100 per accent | WER, SER, DER, IER, SER reduction |
 | 3. Semantic evaluation | BERT-Score of the Part 2 hypotheses against references (no re-inference) | Part 2 outputs | Base / prompted BERT-F1 |
-| 4. Comparison | Combines all parts into plots and a summary table | Results CSVs | Dashboard, heatmap, radar, waterfall, table |
+| 4. Comparison | Combines all parts into plots and a summary table | Results CSVs | Accuracy, speed and semantic overviews, prompt-effect charts, base vs prompted radar, table |
 
 Downloads are deterministic: streams are read in file order with no shuffling, so the same samples are selected each run unless the source datasets change.
 
 ## Repository Layout
 
 ```
-notebooks/   STT_Comparison-wPrompt wBERT.ipynb, results/ (CSVs and PNGs)
+notebooks/   STT_Comparison-wPrompt wBERT.ipynb (runs the benchmark), results_analysis.ipynb (figures),
+             results/ (CSVs and old PNGs), new_results/ (current PNGs)
 src/
   config.py      paths, model ids, sample counts, prompts, GPU hourly cost
   data.py        dataset download, audio decoding (soundfile + librosa)
@@ -54,7 +55,11 @@ pip install -r requirements.txt
 
 ## Usage
 
-Open `notebooks/STT_Comparison-wPrompt wBERT.ipynb` and run the cells in order. Sample counts, models, repeats and prompts are set in `src/config.py`. Outputs are written to `notebooks/results/`.
+Open `notebooks/STT_Comparison-wPrompt wBERT.ipynb` and run the cells in order. Sample counts, models, repeats and prompts are set in `src/config.py`. CSVs are written to `notebooks/results/`.
+
+To redraw the figures without re-running any model, run `notebooks/results_analysis.ipynb`. It reads the saved CSVs and writes PNGs to `notebooks/new_results/`.
+
+> **Note:** `STT_Comparison-wPrompt wBERT.ipynb` was run with the earlier plotting code. Its embedded figures, and the PNGs in `notebooks/results/`, are outdated; use `results_analysis.ipynb` and `notebooks/new_results/` for the current charts. Re-running its plotting cells will fail because those plot functions have been replaced.
 
 ## Evaluation Metrics
 
@@ -91,10 +96,10 @@ The mean prompted WER of Tiny and Base is dominated by a minority of looping out
 
 ## Output Files
 
-`notebooks/results/`
+`notebooks/results/` (CSVs; the PNGs here come from the old plotting code)
 
 - CSVs: `stt_benchmark_results.csv` (Part 1), `stt_cost_efficiency_summary.csv`, `whisper_part2_accent_results.csv` (Part 2, the filename predates the rename to "accent"), `whisper_bert_score_comparison.csv` (Part 3), `whisper_final_summary_report.csv`
-- Figures: `whisper_comprehensive_dashboard.png`, `whisper_metrics_heatmap.png`, `whisper_radar_profiles.png`, `whisper_impact_waterfall.png`, `whisper_summary_table.png`, `whisper_wer_comparison.png`, `whisper_ser_reduction_heatmap.png`
+- Figures (`notebooks/new_results/`, from `results_analysis.ipynb`): `part1_accuracy_latency.png`, `speed_overview.png`, `wer_by_accent.png`, `accuracy_overview.png`, `prompt_shift.png`, `semantic_overview.png`, `radar_profiles.png`, `summary_table.png`. Each has at most four charts, BERT-F1 is kept on its own 0-1 chart, and prompted WER is shown as a median.
 
 ## Known Limitations & Future Work
 
@@ -103,12 +108,11 @@ The mean prompted WER of Tiny and Base is dominated by a minority of looping out
 2. **Mixed accent sources.** An accent's 100 samples may come from more than one dataset, with different recording conditions and transcript styles. The Westbrook "British" set also includes Scottish and Irish speakers.
 3. **Sample size.** 100 samples per accent, on short sentences (about 11 words), gives noisy per-accent averages.
 4. **Sequential benchmark.** Latency and cost describe one request at a time. A batched or concurrent server would show higher throughput and lower cost, which this benchmark does not measure.
-5. **Plot scaling.** BERT-F1 is 0-1 but is shown alongside percentages in the dashboard and radar charts, and the waterfall uses an arbitrary scaling for its semantic bar.
+5. **Medians in figures.** Prompted WER means for Tiny and Base are dominated by looping outputs, so the figures show medians plus the share of samples above 100% WER. Means are in the tables above. The radar's axis scales are fixed constants (`RADAR_SCALES` in `src/plots.py`), so its shapes compare models, not absolute quality.
 6. **Inference only.** No fine-tuning; results depend on the software and hardware used.
 
 ### Future Work
 - Isolate the prompt failure: verify `prompt_ids` handling, try repetition limits and other prompt wordings
-- Report median WER and the share of looped outputs alongside the mean
 - Add per-request cost, a batched throughput benchmark and a human preference study
 - More accents, more samples, and noisy or long-form audio
 

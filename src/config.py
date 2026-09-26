@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 # Paths
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 RESULTS_DIR = PROJECT_ROOT / "notebooks" / "results"
+FIGURES_DIR = PROJECT_ROOT / "notebooks" / "new_results"
 DATASET_DIR = PROJECT_ROOT / "dataset"
 
 # Populates HF_TOKEN in the environment, which huggingface_hub and datasets read automatically
