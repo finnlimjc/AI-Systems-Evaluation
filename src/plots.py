@@ -41,6 +41,8 @@ OUTCOME_COLORS = {"Improved": "#55A868", "Unchanged": "#BBBBBB", "Worse": "#C44E
 RADAR_CATEGORIES = ["WER\n(Lower)", "SER\n(Lower)", "DER\n(Lower)", "BERT-F1\n(Higher)", "Speed\n(RTF)", "Reliability\n(WER spread)"]
 RADAR_SCALES = {"wer": 30, "ser": 20, "der": 15, "rtf": 2, "consistency": 60} #value at which each axis reads 0
 RADAR_LINE_STYLES = {"Base": "-", "Prompted": "--"}
+EDIT_CATEGORY_COLORS = ["#8172B3", "#CCB974", "#64B5CD", "#4C72B0", "#C44E52", "#DD8452"]
+OUTPUT_TYPE_COLORS = ["#55A868", "#A8D5A2", "#CCB974", "#8172B3", "#64B5CD", "#C44E52", "#7B1E22"]
 TABLE_HEADER_COLOR = "#34495E"
 TABLE_ROW_COLORS = ("#FFFFFF", "#ECF0F1")
 
@@ -396,5 +398,45 @@ def plot_summary_table(summary_report:pd.DataFrame) -> Figure:
     
     ax.set_title("Summary: Base vs. Prompted (means over all accents)", pad=12)
     plt.tight_layout()
+    
+    return fig
+
+
+def _stacked_share_bars(ax, shares:pd.DataFrame, colors:list[str], title:str) -> None:
+    labels = _short(shares.index)
+    left = np.zeros(len(shares), dtype=np.float64)
+    for column, color in zip(shares.columns, colors):
+        values = shares[column].to_numpy(dtype=np.float64)
+        bars = ax.barh(labels, values, left=left, label=column, color=color, alpha=BAR_ALPHA)
+        ax.bar_label(bars, labels=[f"{value:.0f}" if value >= 6 else "" for value in values], label_type="center", fontsize=VALUE_LABEL_SIZE, color="white")
+        left += values
+    ax.set_xlim(0, 100)
+    ax.set_xlabel("Share (%)")
+    ax.set_title(title)
+    ax.invert_yaxis()
+    ax.grid(axis="y", visible=False)
+
+
+def plot_edit_categories(part1_counts:pd.DataFrame, part2_counts:pd.DataFrame) -> Figure:
+    """Share of each word-edit category per model: LibriSpeech, and accented speech (base, runaway outputs excluded)."""
+    fig, axes = plt.subplots(1, 2, figsize=(14, 4.6), sharey=True)
+    for ax, counts, title in zip(axes, [part1_counts, part2_counts], ["LibriSpeech (Part 1)", "Accented speech, base (Part 2)"]):
+        shares = counts.div(counts.sum(axis=1), axis=0) * 100
+        _stacked_share_bars(ax, shares, EDIT_CATEGORY_COLORS, title)
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=len(labels), frameon=False)
+    plt.tight_layout(rect=(0, 0.1, 1, 1))
+    
+    return fig
+
+
+def plot_output_types(base_shares:pd.DataFrame, prompted_shares:pd.DataFrame) -> Figure:
+    """Share of transcripts by how they failed, without and with the accent prompt."""
+    fig, axes = plt.subplots(1, 2, figsize=(14, 4.6), sharey=True)
+    for ax, shares, title in zip(axes, [base_shares, prompted_shares], ["Base (no prompt)", "Prompted"]):
+        _stacked_share_bars(ax, shares, OUTPUT_TYPE_COLORS, title)
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=len(labels), frameon=False)
+    plt.tight_layout(rect=(0, 0.1, 1, 1))
     
     return fig
