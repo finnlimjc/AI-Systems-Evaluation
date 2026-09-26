@@ -1,4 +1,6 @@
 /.venv
-*.env
-*.pyc
+__pycache__/
+
+# Secrets
+secrets.env
 /dataset
