@@ -8,6 +8,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 RESULTS_DIR = PROJECT_ROOT / "notebooks" / "results"
 FIGURES_DIR = PROJECT_ROOT / "notebooks" / "new_results"
 DATASET_DIR = PROJECT_ROOT / "dataset"
+ACCENT_DATASET_DIR = DATASET_DIR / "accents"
 
 # Populates HF_TOKEN in the environment, which huggingface_hub and datasets read automatically
 load_dotenv(PROJECT_ROOT / "secrets.env")

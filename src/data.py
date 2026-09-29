@@ -5,7 +5,7 @@ import librosa
 import soundfile as sf
 from datasets import load_dataset, Audio, IterableDataset
 
-from src.config import DATASET_DIR, N_LIBRISPEECH_SAMPLES, LIBRISPEECH_SPLITS, NUM_SAMPLES, SAMPLE_RATE
+from src.config import DATASET_DIR, ACCENT_DATASET_DIR, N_LIBRISPEECH_SAMPLES, LIBRISPEECH_SPLITS, NUM_SAMPLES, SAMPLE_RATE
 from src.config import ACCENT_PROMPTS, ACCENT_LABEL_MAP, WESTBROOK_BRITISH_ACCENTS, SVARAH_TEXT_COLUMNS
 
 # Logger writes to the console by default
@@ -85,21 +85,29 @@ def _stream_audio(path:str, split:str, audio_column:str="audio", **kwargs) -> It
     stream = stream.cast_column(audio_column, Audio(decode=False))
     return stream
 
+def _save_accent_audio(accent:str, sample_idx:int, audio:dict) -> str:
+    """Write a decoded accent clip to ACCENT_DATASET_DIR and return the saved path."""
+    file_path = ACCENT_DATASET_DIR / f"{accent}_{sample_idx + 1}.wav"
+    sf.write(file_path, audio["array"], audio["sampling_rate"])
+    return str(file_path)
+
 def _fill_from_common_accent(accent_data:dict[str, list[dict]], n_samples:int) -> None:
     try:
         stream = _stream_audio("DTU54DL/common-accent", "train")
         for sample in stream:
             accent_label = sample.get("accent", "")
-            
+
             for target, valid_labels in ACCENT_LABEL_MAP.items():
                 is_match = any(label in accent_label for label in valid_labels)
                 if is_match and len(accent_data[target]) < n_samples:
-                    accent_data[target].append({"audio": _decode_audio(sample["audio"]), "sentence": sample["sentence"]})
+                    audio = _decode_audio(sample["audio"])
+                    file_path = _save_accent_audio(target, len(accent_data[target]), audio)
+                    accent_data[target].append({"audio": audio, "sentence": sample["sentence"], "file_path": file_path})
                     break
-            
+
             if all(len(samples) >= n_samples for samples in accent_data.values()):
                 break
-    
+
     except Exception as error:
         logger.warning("DTU54DL/common-accent failed to load: %s", error)
 
@@ -115,8 +123,10 @@ def _fill_british_from_westbrook(samples:list[dict], n_samples:int) -> None:
             accent_str = str(accent_val)
         
         if accent_str in WESTBROOK_BRITISH_ACCENTS:
-            samples.append({"audio": _decode_audio(sample["audio"]), "sentence": sample["raw_text"]})
-        
+            audio = _decode_audio(sample["audio"])
+            file_path = _save_accent_audio("british", len(samples), audio)
+            samples.append({"audio": audio, "sentence": sample["raw_text"], "file_path": file_path})
+
         if len(samples) >= n_samples:
             break
 
@@ -138,14 +148,18 @@ def _fill_indian_from_svarah(samples:list[dict], n_samples:int) -> None:
         if len(samples) >= n_samples:
             break
         sentence = next((sample[column] for column in SVARAH_TEXT_COLUMNS if sample.get(column)), "")
-        samples.append({"audio": _decode_audio(sample["audio"]), "sentence": sentence})
+        audio = _decode_audio(sample["audio"])
+        file_path = _save_accent_audio("indian", len(samples), audio)
+        samples.append({"audio": audio, "sentence": sentence, "file_path": file_path})
 
 def _fill_singaporean_from_mnsc(samples:list[dict], n_samples:int) -> None:
     stream = _stream_audio("MERaLiON/Multitask-National-Speech-Corpus-v1", "train", audio_column="context", data_dir="ASR-PART1-Test")
     for sample in stream:
         if len(samples) >= n_samples:
             break
-        samples.append({"audio": _decode_audio(sample["context"]), "sentence": sample.get("answer", "")})
+        audio = _decode_audio(sample["context"])
+        file_path = _save_accent_audio("singaporean", len(samples), audio)
+        samples.append({"audio": audio, "sentence": sample.get("answer", ""), "file_path": file_path})
 
 def load_accent_data(n_samples:int=NUM_SAMPLES) -> dict[str, list[dict]]:
     """
@@ -155,8 +169,9 @@ def load_accent_data(n_samples:int=NUM_SAMPLES) -> dict[str, list[dict]]:
         - n_samples: target number of samples per accent
     
     Outputs:
-        - dict mapping accent name to a list of {"audio", "sentence"} samples; a source that fails to load is logged and skipped
+        - dict mapping accent name to a list of {"audio", "sentence", "file_path"} samples; a source that fails to load is logged and skipped
     """
+    ACCENT_DATASET_DIR.mkdir(parents=True, exist_ok=True)
     accent_data = {accent: [] for accent in ACCENT_PROMPTS}
     
     fallback_loaders = {
