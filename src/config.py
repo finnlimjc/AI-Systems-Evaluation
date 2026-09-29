@@ -55,15 +55,16 @@ LIBRISPEECH_SPLITS = [
 ]
 
 # Hourly hosting rates ($/hr): AWS EC2 on-demand, Linux, us-east-1 (https://aws.amazon.com/ec2/pricing/on-demand/)
+# Large-v3 computing requirements (https://gigagpu.com/whisper-vram-requirements/)
 GPU_HOURLY_COST = {
     "Whisper Tiny": 0.526, #g4dn.xlarge (1x NVIDIA T4), the GPU class the benchmark ran on in Colab
     "Whisper Base": 0.526, #g4dn.xlarge (1x NVIDIA T4), same instance as Tiny
-    "Whisper Large-v3": 1.006 #g5.xlarge (1x NVIDIA A10G, 24GB), large enough for the ~10GB VRAM Large-v3 needs
+    "Whisper Large-v3": 1.006 #g5.xlarge (1x NVIDIA A10G, 24GB), large enough to run 6-7 concurrent streams
 }
 
 # Part 2: accent evaluation
 NUM_SAMPLES = 100 #samples per accent
-SAMPLE_RATE = 16_000
+SAMPLE_RATE = 16_000 #16 kHz, standard input rate Whisper expect for snapshot of sound waves (https://huggingface.co/blog/fine-tune-whisper)
 ACCENT_PROMPTS = {
     "singaporean": "The following is an English conversation spoken with a Singaporean accent.",
     "indian": "The following is an English transcription spoken with an Indian accent.",

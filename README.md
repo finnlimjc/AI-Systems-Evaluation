@@ -19,7 +19,7 @@ The benchmark notebook has four parts. Its cells are thin drivers that call the 
 | 1. Latency & efficiency | Times each clip on each model (untimed warm-up, median of 3 runs) | LibriSpeech validation, clean + other, 100 clips each | WER, CER, latency p50/p95/p99, RTF, cost per 1,000 audio hours |
 | 2. Accent robustness | Transcribes each sample with and without an accent prompt | `DTU54DL/common-accent`, topped up from Westbrook (British), Svarah (Indian) or MNSC (Singaporean); 100 per accent | WER, SER, DER, IER, SER reduction |
 | 3. Semantic evaluation | BERT-Score of the Part 2 hypotheses against references (no re-inference) | Part 2 outputs | Base / prompted BERT-F1 |
-| 4. Comparison | Combines all parts into plots and a summary table | Results CSVs | Accuracy, speed and semantic overviews, prompt-effect charts, base vs prompted radar, table |
+| 4. Comparison | Combines all parts into plots, a summary table and a written analysis | Results CSVs | Accuracy, speed and semantic overviews, prompt-effect charts, base vs prompted radar, table, error/prompt analysis, model recommendation |
 
 Downloads are deterministic: streams are read in file order with no shuffling, so the same samples are selected each run unless the source datasets change.
 
@@ -34,6 +34,7 @@ src/
   inference.py   Whisper pipelines, latency benchmark, accent evaluation
   metrics.py     WER/CER/SER/DER/IER, BERT-F1, normalisation
   aggregate.py   summary tables from raw results
+  analysis.py    word-edit categories and transcript-failure classification (loops, echoes, truncation)
   plots.py       plot configuration and all figures
   io_utils.py    saving and loading results
 dataset/     downloaded LibriSpeech wavs (git-ignored)
@@ -50,14 +51,14 @@ pip install -r requirements.txt
 ```
 
 - **GPU:** on Windows, `pip install torch` installs a CPU-only build. Install the CUDA build from [pytorch.org](https://pytorch.org/get-started/locally/) and check with `torch.cuda.is_available()`. Whisper Large-v3 needs about 10GB of VRAM in fp16, so it will not fit a 6GB card.
-- **Hugging Face token:** create `secrets.env` in the project root containing `HF_TOKEN=<your token>`. It is loaded automatically and git-ignored.
+- **Hugging Face token:** create `secrets.env` in the project root containing `HF_TOKEN=<your token>`. It is loaded automatically and git-ignored. This is a recommended step, but not necessary.
 - **Audio decoding** uses `soundfile` and `librosa`, so FFmpeg is not required.
 
 ## Usage
 
 Open `notebooks/STT_Comparison-wPrompt wBERT.ipynb` and run the cells in order. Sample counts, models, repeats and prompts are set in `src/config.py`. CSVs are written to `notebooks/results/`.
 
-To redraw the figures without re-running any model, run `notebooks/results_analysis.ipynb`. It reads the saved CSVs and writes PNGs to `notebooks/new_results/`.
+To redraw the figures without re-running any model, run `notebooks/results_analysis.ipynb`. It reads the saved CSVs, writes PNGs to `notebooks/new_results/`, and ends with a written analysis (built with `src/analysis.py`): what mistakes each model makes, why the accent prompt fails, and a model recommendation by use case.
 
 > **Note:** `STT_Comparison-wPrompt wBERT.ipynb` was run with the earlier plotting code. Its embedded figures, and the PNGs in `notebooks/results/`, are outdated; use `results_analysis.ipynb` and `notebooks/new_results/` for the current charts. Re-running its plotting cells will fail because those plot functions have been replaced.
 
@@ -99,7 +100,7 @@ The mean prompted WER of Tiny and Base is dominated by a minority of looping out
 `notebooks/results/` (CSVs; the PNGs here come from the old plotting code)
 
 - CSVs: `stt_benchmark_results.csv` (Part 1), `stt_cost_efficiency_summary.csv`, `whisper_part2_accent_results.csv` (Part 2, the filename predates the rename to "accent"), `whisper_bert_score_comparison.csv` (Part 3), `whisper_final_summary_report.csv`
-- Figures (`notebooks/new_results/`, from `results_analysis.ipynb`): `part1_accuracy_latency.png`, `speed_overview.png`, `wer_by_accent.png`, `accuracy_overview.png`, `prompt_shift.png`, `semantic_overview.png`, `radar_profiles.png`, `summary_table.png`. Each has at most four charts, BERT-F1 is kept on its own 0-1 chart, and prompted WER is shown as a median.
+- Figures (`notebooks/new_results/`, from `results_analysis.ipynb`): `part1_accuracy_latency.png`, `speed_overview.png`, `wer_by_accent.png`, `accuracy_overview.png`, `prompt_shift.png`, `semantic_overview.png`, `radar_profiles.png`, `summary_table.png`, `edit_categories.png`, `output_types.png`. Each has at most four charts, BERT-F1 is kept on its own 0-1 chart, and prompted WER is shown as a median. `edit_categories.png` and `output_types.png` support the written analysis in the notebook: word-edit categories (LibriSpeech vs accented speech) and transcript failure types (base vs prompted).
 
 ## Known Limitations & Future Work
 
