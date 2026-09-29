@@ -83,12 +83,8 @@ def compute_error_breakdown(reference:str, hypothesis:str) -> dict:
 
 def compute_bert_f1(hypotheses:list[str], references:list[str]) -> np.ndarray:
     """
-    Per-sample BERT-Score F1 of hypotheses against references.
-    WER counts word-level edits (substitutions, insertions, deletions). 
-    BERTScore instead asks whether the transcript still means the same thing as the reference.
-    It is calculated by taking (Delta F1 / F1) x 100, where Delta F1 is the difference in F1 Scores between a perturbed prompt and the original prompt in your dataset. 
-    
-    Source: https://docs.aws.amazon.com/bedrock/latest/userguide/model-evaluation-report-programmatic.html
+    BERTScore leverages the pre-trained contextual embeddings from BERT and matches words in candidate and reference sentences by cosine similarity.
+    Source: https://github.com/Tiiiger/bert_score
     """
     _, _, f1 = score(hypotheses, references, lang="en", device=DEVICE, batch_size=16) # Sample size is small
     f1_scores = f1.numpy()
