@@ -36,7 +36,8 @@ ACCENT_COLORS = ["#8172B3", "#CCB974", "#64B5CD"]
 ERROR_TYPE_COLORS = ["#C44E52", "#DD8452", "#4C72B0"]
 GAIN_COLOR = "#55A868"
 LOSS_COLOR = "#C44E52"
-LATENCY_PERCENTILE_COLORS = ("#4C72B0", "#C44E52")
+LATENCY_PERCENTILE_COLORS = ("#4C72B0", "#DD8452", "#C44E52")
+PRF_COLORS = ("#4C72B0", "#DD8452", "#55A868")
 OUTCOME_COLORS = {"Improved": "#55A868", "Unchanged": "#BBBBBB", "Worse": "#C44E52"}
 RADAR_CATEGORIES = ["WER\n(Lower)", "SER\n(Lower)", "DER\n(Lower)", "BERT-F1\n(Higher)", "Speed\n(RTF)", "Reliability\n(WER spread)"]
 RADAR_SCALES = {"wer": 30, "ser": 20, "der": 15, "rtf": 2, "consistency": 60} #value at which each axis reads 0
@@ -68,22 +69,16 @@ def _mean_by_model(df:pd.DataFrame, columns:list[str], model_column:str="Model")
     return means
 
 
-def _label_bars(ax, fmt:str) -> None:
-    for container in ax.containers:
-        ax.bar_label(container, fmt=fmt, padding=2, fontsize=VALUE_LABEL_SIZE)
-
-
 def _paired_bars(ax, labels:list[str], base:pd.Series, prompted:pd.Series, ylabel:str, title:str, fmt:str, legend_loc:str="upper right") -> None:
     x = np.arange(len(labels))
     ax.bar(x - BAR_WIDTH / 2, base, BAR_WIDTH, label="Base", color=CONDITION_COLORS["Base"], alpha=BAR_ALPHA)
     ax.bar(x + BAR_WIDTH / 2, prompted, BAR_WIDTH, label="Prompted", color=CONDITION_COLORS["Prompted"], alpha=BAR_ALPHA)
-    _label_bars(ax, fmt)
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
     ax.set_ylabel(ylabel)
     ax.set_title(title)
     ax.margins(y=HEADROOM)
-    ax.grid(axis="x", visible=False)
+    ax.grid(False)
     ax.legend(loc=legend_loc)
 
 
@@ -91,20 +86,45 @@ def plot_accuracy_latency(df_results:pd.DataFrame) -> Figure:
     """Part 1: WER and per-clip latency by category and system (bars show mean +/- CI)."""
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
     
-    sns.barplot(data=df_results, x="Category", y="WER (%)", hue="System", hue_order=MODEL_ORDER, palette=MODEL_COLORS, ax=axes[0])
+    sns.barplot(data=df_results, x="Category", y="WER (%)", hue="System", hue_order=MODEL_ORDER, palette=MODEL_COLORS, ax=axes[0], errorbar=None)
     axes[0].set_title("Word Error Rate by Category")
     axes[0].set_xlabel("")
     axes[0].set_ylabel("WER (%), lower is better")
     
-    sns.barplot(data=df_results, x="Category", y="Latency (s)", hue="System", hue_order=MODEL_ORDER, palette=MODEL_COLORS, ax=axes[1])
+    sns.barplot(data=df_results, x="Category", y="Latency (s)", hue="System", hue_order=MODEL_ORDER, palette=MODEL_COLORS, ax=axes[1], errorbar=None)
     axes[1].set_title("Per-Clip Latency by Category")
     axes[1].set_xlabel("")
     axes[1].set_ylabel("Latency (s), lower is better")
     
     for ax in axes:
         ax.margins(y=HEADROOM)
-        ax.grid(axis="x", visible=False)
+        ax.grid(False)
         ax.legend(title="", loc="upper left")
+    
+    plt.tight_layout()
+    
+    return fig
+
+
+def plot_precision_recall_f1(df_latency:pd.DataFrame) -> Figure:
+    """Part 1: mean word-level precision, recall and F1 by system."""
+    means = _mean_by_model(df_latency, ["Precision (%)", "Recall (%)", "F1 Score (%)"], model_column="System")
+    models = _short(MODEL_ORDER)
+    x = np.arange(len(models))
+    width = 0.26
+    
+    fig, ax = plt.subplots(figsize=(8, 5.5))
+    
+    metrics = ("Precision (%)", "Recall (%)", "F1 Score (%)")
+    for offset, metric, color in zip((-width, 0, width), metrics, PRF_COLORS):
+        ax.bar(x + offset, means[metric], width, label=metric.replace(" (%)", ""), color=color, alpha=BAR_ALPHA)
+    ax.set_xticks(x)
+    ax.set_xticklabels(models)
+    ax.set_ylabel("Score (%)")
+    ax.set_title("Word-Level Precision, Recall and F1 (LibriSpeech)")
+    ax.margins(y=HEADROOM)
+    ax.grid(False)
+    ax.legend(loc="lower right")
     
     plt.tight_layout()
     
@@ -119,32 +139,31 @@ def plot_speed_overview(df_results:pd.DataFrame, summary_df:pd.DataFrame) -> Fig
     fig, axes = plt.subplots(2, 2, figsize=(12, 9))
     
     ax = axes[0, 0]
-    ax.bar(x - BAR_WIDTH / 2, summary_df["p50 Latency (ms)"], BAR_WIDTH, label="p50 (median)", color=LATENCY_PERCENTILE_COLORS[0], alpha=BAR_ALPHA)
-    ax.bar(x + BAR_WIDTH / 2, summary_df["p95 Latency (ms)"], BAR_WIDTH, label="p95 (tail)", color=LATENCY_PERCENTILE_COLORS[1], alpha=BAR_ALPHA)
-    _label_bars(ax, "%.0f")
+    latency_width = BAR_WIDTH * 2 / 3
+    ax.bar(x - latency_width, summary_df["p50 Latency (ms)"], latency_width, label="p50 (median)", color=LATENCY_PERCENTILE_COLORS[0], alpha=BAR_ALPHA)
+    ax.bar(x, summary_df["p95 Latency (ms)"], latency_width, label="p95 (tail)", color=LATENCY_PERCENTILE_COLORS[1], alpha=BAR_ALPHA)
+    ax.bar(x + latency_width, summary_df["p99 Latency (ms)"], latency_width, label="p99 (tail)", color=LATENCY_PERCENTILE_COLORS[2], alpha=BAR_ALPHA)
     ax.set_xticks(x)
     ax.set_xticklabels(models)
     ax.set_ylabel("Latency per clip (ms)")
     ax.set_title("Latency")
     ax.margins(y=HEADROOM)
-    ax.grid(axis="x", visible=False)
+    ax.grid(False)
     ax.legend(loc="upper left")
     
     ax = axes[0, 1]
     ax.bar(models, summary_df["Mean RTF"], width=0.5, color=MODEL_COLORS[:len(models)], alpha=BAR_ALPHA)
-    _label_bars(ax, "%.3f")
     ax.set_ylabel("RTF (processing time / audio time)")
     ax.set_title("Real-Time Factor (lower is faster)")
     ax.margins(y=HEADROOM)
-    ax.grid(axis="x", visible=False)
+    ax.grid(False)
     
     ax = axes[1, 0]
     ax.bar(models, summary_df["Cost / 1,000 Audio Hours ($)"], width=0.5, color=MODEL_COLORS[:len(models)], alpha=BAR_ALPHA)
-    _label_bars(ax, "$%.0f")
     ax.set_ylabel("Compute cost per 1,000 audio hours ($)")
     ax.set_title("Infrastructure Cost")
     ax.margins(y=HEADROOM)
-    ax.grid(axis="x", visible=False)
+    ax.grid(False)
     
     ax = axes[1, 1]
     wer_by_model = _mean_by_model(df_results, ["WER (%)"], model_column="System")["WER (%)"]
@@ -156,6 +175,7 @@ def plot_speed_overview(df_results:pd.DataFrame, summary_df:pd.DataFrame) -> Fig
     ax.set_ylabel("Mean WER (%)")
     ax.set_title("Accuracy vs. Speed (bottom-left is best)")
     ax.margins(x=0.15, y=0.2)
+    ax.grid(False)
     
     fig.suptitle("Speed and Cost (LibriSpeech, sequential requests)")
     plt.tight_layout(rect=(0, 0, 1, 0.95))
@@ -187,8 +207,8 @@ def plot_wer_comparison(df_accent:pd.DataFrame) -> Figure:
     grid.set_titles(col_template="{col_name}")
     
     for ax in grid.axes.flat:
-        _label_bars(ax, "%.1f")
         ax.margins(y=HEADROOM)
+        ax.grid(False)
     
     fig.suptitle("Median Word Error Rate by Accent: Base vs. Prompted")
     plt.tight_layout(rect=(0, 0, 1, 0.94))
@@ -223,27 +243,24 @@ def plot_accuracy_overview(df_accent:pd.DataFrame) -> Figure:
     for outcome, color in OUTCOME_COLORS.items():
         ax.bar(models, outcomes[outcome], bottom=bottom, label=outcome, color=color, alpha=BAR_ALPHA)
         bottom += outcomes[outcome].to_numpy()
-    for container in ax.containers:
-        ax.bar_label(container, fmt="%.0f%%", label_type="center", fontsize=VALUE_LABEL_SIZE, color="black")
     ax.set_ylabel("Share of samples (%)")
     ax.set_title("Per-Sample Effect of Prompting on WER")
     ax.set_ylim(0, 100)
-    ax.grid(axis="x", visible=False)
+    ax.grid(False)
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.08), ncol=3)
-    
+
     ax = axes[1, 1]
     x = np.arange(len(models))
     width = 0.26
     error_columns = ["Base SER (%)", "Base DER (%)", "Base IER (%)"]
     for offset, column, label, color in zip((-width, 0, width), error_columns, ("Substitutions", "Deletions", "Insertions"), ERROR_TYPE_COLORS):
         ax.bar(x + offset, means[column], width, label=label, color=color, alpha=BAR_ALPHA)
-    _label_bars(ax, "%.1f")
     ax.set_xticks(x)
     ax.set_xticklabels(models)
     ax.set_ylabel("Mean error rate (%)")
     ax.set_title("Error Types (Base)")
     ax.margins(y=HEADROOM)
-    ax.grid(axis="x", visible=False)
+    ax.grid(False)
     ax.legend(loc="upper right")
     
     fig.suptitle("Accent Evaluation: Accuracy (all accents pooled)")
@@ -269,14 +286,13 @@ def plot_semantic_overview(df_bert:pd.DataFrame) -> Figure:
     width = 0.26
     for offset, accent, color in zip((-width, 0, width), change.columns, ACCENT_COLORS):
         ax.bar(x + offset, change[accent], width, label=accent, color=color, alpha=BAR_ALPHA)
-    _label_bars(ax, "%.3f")
     ax.axhline(y=0, color="black", linewidth=1)
     ax.set_xticks(x)
     ax.set_xticklabels(models)
     ax.set_ylabel("Prompted minus base BERT-F1")
     ax.set_title("Change in Similarity with Prompting")
     ax.margins(y=HEADROOM)
-    ax.grid(axis="x", visible=False)
+    ax.grid(False)
     ax.legend(loc="lower right")
     
     fig.suptitle("Semantic Evaluation (BERT-F1)")
@@ -301,14 +317,13 @@ def plot_prompt_shift(df_accent:pd.DataFrame) -> Figure:
         table = df_shift.pivot_table(index="Model", columns="Accent", values=column, aggfunc=statistic).reindex(MODEL_ORDER)
         for offset, accent, color in zip((-width, 0, width), table.columns, ACCENT_COLORS):
             ax.bar(x + offset, table[accent], width, label=accent, color=color, alpha=BAR_ALPHA)
-        _label_bars(ax, "%.0f")
         ax.axhline(y=0, color="black", linewidth=1)
         ax.set_xticks(x)
         ax.set_xticklabels(models)
         ax.set_ylabel(ylabel)
         ax.set_title(title)
         ax.margins(y=HEADROOM)
-        ax.grid(axis="x", visible=False)
+        ax.grid(False)
     axes[0].legend(loc="upper right")
     
     fig.suptitle("Effect of the Accent Prompt by Model and Accent")
@@ -402,19 +417,23 @@ def plot_summary_table(summary_report:pd.DataFrame) -> Figure:
     return fig
 
 
-def _stacked_share_bars(ax, shares:pd.DataFrame, colors:list[str], title:str) -> None:
+def _stacked_share_bars(ax, shares:pd.DataFrame, colors:list[str], title:str, show_values:bool=True) -> None:
     labels = _short(shares.index)
     left = np.zeros(len(shares), dtype=np.float64)
     for column, color in zip(shares.columns, colors):
         values = shares[column].to_numpy(dtype=np.float64)
         bars = ax.barh(labels, values, left=left, label=column, color=color, alpha=BAR_ALPHA)
-        ax.bar_label(bars, labels=[f"{value:.0f}" if value >= 6 else "" for value in values], label_type="center", fontsize=VALUE_LABEL_SIZE, color="white")
+        if show_values:
+            ax.bar_label(bars, labels=[f"{value:.0f}" if value >= 6 else "" for value in values], label_type="center", fontsize=VALUE_LABEL_SIZE, color="white")
         left += values
     ax.set_xlim(0, 100)
     ax.set_xlabel("Share (%)")
     ax.set_title(title)
     ax.invert_yaxis()
-    ax.grid(axis="y", visible=False)
+    if show_values:
+        ax.grid(axis="y", visible=False)
+    else:
+        ax.grid(False)
 
 
 def plot_edit_categories(part1_counts:pd.DataFrame, part2_counts:pd.DataFrame) -> Figure:
@@ -434,7 +453,7 @@ def plot_output_types(base_shares:pd.DataFrame, prompted_shares:pd.DataFrame) ->
     """Share of transcripts by how they failed, without and with the accent prompt."""
     fig, axes = plt.subplots(1, 2, figsize=(14, 4.6), sharey=True)
     for ax, shares, title in zip(axes, [base_shares, prompted_shares], ["Base (no prompt)", "Prompted"]):
-        _stacked_share_bars(ax, shares, OUTPUT_TYPE_COLORS, title)
+        _stacked_share_bars(ax, shares, OUTPUT_TYPE_COLORS, title, show_values=False)
     handles, labels = axes[0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="lower center", ncol=len(labels), frameon=False)
     plt.tight_layout(rect=(0, 0.1, 1, 1))
