@@ -15,7 +15,6 @@ _TRANSFORMATION = jiwer.Compose([
     jiwer.Strip()
 ])
 
-
 def normalize_text(text:str) -> str:
     """Normalizes text by converting to lowercase, removing punctuation, and stripping whitespace."""
     if not text:
@@ -25,9 +24,8 @@ def normalize_text(text:str) -> str:
     normalized = re.sub(r"\s+", " ", no_punctuation).strip()
     return normalized
 
-
 def compute_metrics(reference:str, hypothesis:str) -> dict:
-    """Calculates WER, CER, Precision, Recall, and F1 Score with alignment details."""
+    """Calculates Word Error Rate (WER), Character Error Rate (CER), Precision, Recall, and F1 Score with alignment details (hits, subs, deletion, insertion)."""
     norm_ref = normalize_text(reference)
     norm_hyp = normalize_text(hypothesis)
     
@@ -40,8 +38,8 @@ def compute_metrics(reference:str, hypothesis:str) -> dict:
     ins = word_details.insertions
     hits = word_details.hits
     
-    n_predicted = hits + sub + ins
-    n_reference = hits + sub + dele
+    n_predicted = hits + sub + ins # Insertions act like FP
+    n_reference = hits + sub + dele # Deletions act like FN
     precision = hits / n_predicted if n_predicted > 0 else 0.0
     recall = hits / n_reference if n_reference > 0 else 0.0
     f1 = (2 * precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
@@ -58,7 +56,6 @@ def compute_metrics(reference:str, hypothesis:str) -> dict:
         "insertions": ins
     }
     return metrics
-
 
 def compute_error_breakdown(reference:str, hypothesis:str) -> dict:
     """Compute WER, SER (substitution error rate), DER, IER and hit rate, all in percent."""
@@ -84,13 +81,18 @@ def compute_error_breakdown(reference:str, hypothesis:str) -> dict:
     }
     return breakdown
 
-
 def compute_bert_f1(hypotheses:list[str], references:list[str]) -> np.ndarray:
-    """Per-sample BERT-Score F1 of hypotheses against references."""
-    _, _, f1 = score(hypotheses, references, lang="en", device=DEVICE, batch_size=16)
+    """
+    Per-sample BERT-Score F1 of hypotheses against references.
+    WER counts word-level edits (substitutions, insertions, deletions). 
+    BERTScore instead asks whether the transcript still means the same thing as the reference.
+    It is calculated by taking (Delta F1 / F1) x 100, where Delta F1 is the difference in F1 Scores between a perturbed prompt and the original prompt in your dataset. 
+    
+    Source: https://docs.aws.amazon.com/bedrock/latest/userguide/model-evaluation-report-programmatic.html
+    """
+    _, _, f1 = score(hypotheses, references, lang="en", device=DEVICE, batch_size=16) # Sample size is small
     f1_scores = f1.numpy()
     return f1_scores
-
 
 def normalize_metric(values:pd.Series, lower_is_better:bool=True) -> pd.Series:
     """Normalize values to a 0-100 scale where 100 is best."""

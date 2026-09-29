@@ -19,48 +19,45 @@ _SILENCED_WARNINGS = {
 for logger_name, phrase in _SILENCED_WARNINGS.items():
     logging.getLogger(logger_name).addFilter(lambda record, phrase=phrase: phrase not in record.getMessage())
 
-
 def build_pipe(model_id:str) -> Pipeline:
-    """Build an ASR pipeline for one Whisper checkpoint."""
+    """Build an Automatic Speech Recognition (ASR) pipeline for one Whisper checkpoint."""
     pipe = pipeline(
-        "automatic-speech-recognition",
+        "automatic-speech-recognition", # Uses the ASR task specific to Whisper models (chosen by model param)
         model=model_id,
         dtype=LATENCY_DTYPE,
         device=DEVICE,
-        model_kwargs={"attn_implementation": "sdpa"}
+        model_kwargs={"attn_implementation": "sdpa"} # Recommended as described in (https://huggingface.co/openai/whisper-large-v3)
     )
     pipe.tokenizer.clean_up_tokenization_spaces = False #Whisper's BPE tokenizer ignores it and warns when True
     return pipe
 
-
 def build_pipes() -> dict[str, Pipeline]:
-    """Build one ASR pipeline per model in MODEL_IDS."""
+    """Build one Automatic Speech Recognition (ASR) pipeline per model in config/MODEL_IDS."""
     pipes = {model_name: build_pipe(model_id) for model_name, model_id in MODEL_IDS.items()}
     return pipes
-
 
 def sync_gpu() -> None:
     """Make sure queued GPU work has finished so timings are accurate."""
     if torch.cuda.is_available():
         torch.cuda.synchronize()
 
-
 def timed_transcribe(pipe:Pipeline, audio_input:dict) -> tuple[str, float]:
     """Transcribe one in-memory clip and return (text, elapsed_seconds)."""
-    sync_gpu()
+    sync_gpu() #Flush
     start = time.perf_counter()
-    output = pipe(dict(audio_input), generate_kwargs=GENERATE_KWARGS) #shallow copy: pipeline may pop keys
-    sync_gpu()
+    output = pipe(dict(audio_input), generate_kwargs=GENERATE_KWARGS)
+    sync_gpu() # Wait until all GPU Kernels have completed
     elapsed = time.perf_counter() - start
     return output["text"], elapsed
 
-
 def run_latency_benchmark(pipes:dict[str, Pipeline], clips:list[dict]) -> pd.DataFrame:
-    """Time every clip individually on every model, keeping the median of N_REPEATS runs.
+    """
+    Time every clip individually on every model, keeping the median of N_REPEATS runs.
     
     Inputs:
         - pipes: model name -> ASR pipeline
         - clips: clip metadata with pre-loaded "audio_input"
+    
     Outputs:
         - one row per (model, clip) with latency, RTF and accuracy metrics
     """
@@ -75,8 +72,10 @@ def run_latency_benchmark(pipes:dict[str, Pipeline], clips:list[dict]) -> pd.Dat
             for repeat in range(N_REPEATS):
                 text, elapsed = timed_transcribe(pipe, clip["audio_input"])
                 timings[repeat] = elapsed
+                
+                # Take the first transcript
                 if repeat == 0:
-                    hyp_text = text #decoding is greedy/deterministic, first repeat is enough
+                    hyp_text = text
             
             latency = float(np.median(timings))
             duration = clip["duration_sec"]
@@ -116,20 +115,30 @@ def run_latency_benchmark(pipes:dict[str, Pipeline], clips:list[dict]) -> pd.Dat
         "Hypothesis": "object"
     }
     df_results = pd.DataFrame(rows).astype(column_dtypes)
+    
     return df_results
 
+def _generate_text(model, processor, input_features:torch.Tensor, prompt_ids:torch.Tensor|None=None) -> str:
+    """Generate and decode one transcript, optionally conditioned on prompt_ids (e.g. an accent hint)."""
+    with torch.no_grad():
+        generated_ids = model.generate(input_features, language="en", task="transcribe", prompt_ids=prompt_ids)
+    text = processor.batch_decode(generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0].strip()
+    return text
 
 def run_accent_evaluation(accent_data:dict[str, list[dict]]) -> pd.DataFrame:
-    """Transcribe every accent sample with and without the accent prompt on every model.
+    """
+    Transcribe every accent sample with and without the accent prompt on every model.
+    Source: https://huggingface.co/docs/transformers/v5.17.0/en/model_doc/whisper
     
     Inputs:
         - accent_data: accent name -> list of {"audio", "sentence"} samples
+        
     Outputs:
         - one row per (model, accent, sample) with base and prompted hypotheses and error breakdowns
     """
     rows = []
     for model_name, model_id in tqdm(MODEL_IDS.items(), desc="Models"):
-        processor = WhisperProcessor.from_pretrained(model_id)
+        processor = WhisperProcessor.from_pretrained(model_id) #  wraps a feature extractor and a tokenizer into a single processor.
         model = WhisperForConditionalGeneration.from_pretrained(model_id).to(DEVICE, dtype=ACCENT_DTYPE)
         
         for accent_name, samples in accent_data.items():
@@ -140,10 +149,11 @@ def run_accent_evaluation(accent_data:dict[str, list[dict]]) -> pd.DataFrame:
             prompt_ids = torch.tensor(processor.tokenizer.encode(prompt)).to(DEVICE) if prompt else None
             
             for sample_idx, sample in enumerate(samples):
+                # 2D representation of frequencies (log-Mel filter bank features to mimic how humans perceive sound)
                 input_features = processor(
                     sample["audio"]["array"],
                     sampling_rate=sample["audio"]["sampling_rate"],
-                    return_tensors="pt"
+                    return_tensors="pt" #wrap as tensor
                 ).input_features.to(DEVICE).to(ACCENT_DTYPE)
                 
                 base_text = _generate_text(model, processor, input_features)
@@ -191,10 +201,3 @@ def run_accent_evaluation(accent_data:dict[str, list[dict]]) -> pd.DataFrame:
     }
     df_accent = pd.DataFrame(rows).astype(column_dtypes)
     return df_accent
-
-
-def _generate_text(model, processor, input_features:torch.Tensor, prompt_ids:torch.Tensor|None=None) -> str:
-    with torch.no_grad():
-        generated_ids = model.generate(input_features, language="en", task="transcribe", prompt_ids=prompt_ids)
-    text = processor.batch_decode(generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0].strip()
-    return text

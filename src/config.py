@@ -21,7 +21,7 @@ FINAL_SUMMARY_FILENAME = "whisper_final_summary_report.csv"
 
 # Hardware
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
-LATENCY_DTYPE = torch.float16 if torch.cuda.is_available() else torch.float32
+LATENCY_DTYPE = torch.float16 if torch.cuda.is_available() else torch.float32 #GPUs tend to run fp16 matmuls much faster than fp32
 ACCENT_DTYPE = torch.float32
 
 # Models
