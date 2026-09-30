@@ -37,10 +37,8 @@ src/
   analysis.py    word-edit categories and transcript-failure classification (loops, echoes, truncation)
   plots.py       plot configuration and all figures
   io_utils.py    saving and loading results
-dataset/     downloaded LibriSpeech wavs (git-ignored)
+dataset/     downloaded LibriSpeech and Accent wavs (git-ignored)
 ```
-
-`src/` contains no printing; the notebook does all display and plotting.
 
 ## Setup
 
