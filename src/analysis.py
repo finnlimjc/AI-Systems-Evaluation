@@ -50,12 +50,13 @@ def word_edits(reference:str, hypothesis:str) -> list[tuple[str, str, str]]:
     return edits
 
 def classify_edit(kind:str, ref_word:str, hyp_word:str) -> str:
-    """Assign one rule-based category to a word edit."""
+    """Assign one rule-based category to a word edit, where substitutions are broken down into finer categories"""
     if kind == "delete":
         return "Dropped word"
     if kind == "insert":
         return "Extra word"
-    
+
+    # Split Substitution into Finer Buckets
     is_numeral = any(char.isdigit() for char in ref_word + hyp_word)
     is_abbreviation = ref_word in ABBREVIATIONS and hyp_word in ABBREVIATIONS
     if is_numeral or is_abbreviation:
