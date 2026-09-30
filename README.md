@@ -64,7 +64,7 @@ To redraw the figures without re-running any model, run `notebooks/results_analy
 
 **Accuracy** (text is lower-cased and stripped of punctuation before scoring)
 - **WER:** (substitutions + deletions + insertions) / reference words. Not capped at 100%, because insertions are unbounded.
-- **SER / DER / IER:** the substitution, deletion and insertion parts of WER.
+- **S / D / I:** the substitution, deletion and insertion parts of WER.
 - **CER:** the same at character level.
 - **BERT-F1:** semantic similarity to the reference on a 0-1 scale (higher is better).
 
